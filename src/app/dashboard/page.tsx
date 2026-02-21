@@ -2,42 +2,26 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { createBrowserClient } from '@/lib/supabase-client';
-import type { Scan, UserProfile } from '@/types/report';
-import { PLAN_LIMITS } from '@/types/report';
+import type { Scan } from '@/types/report';
 import { getScoreColor, formatDate } from '@/lib/utils';
-import AuthModal from '@/components/dashboard/auth-modal';
 
 export default function DashboardPage() {
-  const [user, setUser] = useState<UserProfile | null>(null);
   const [scans, setScans] = useState<Scan[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAuth, setShowAuth] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    checkAuth();
+    fetchScans();
   }, []);
 
-  async function checkAuth() {
+  async function fetchScans() {
     try {
-      const supabase = createBrowserClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (session?.user) {
-        setIsAuthenticated(true);
-        // Fetch user profile and scans
-        const [profileRes, scansRes] = await Promise.all([
-          supabase.from('profiles').select('*').eq('id', session.user.id).single(),
-          supabase.from('scans').select('*').eq('user_id', session.user.id).order('created_at', { ascending: false }),
-        ]);
-        if (profileRes.data) setUser(profileRes.data as UserProfile);
-        if (scansRes.data) setScans(scansRes.data as Scan[]);
-      } else {
-        setShowAuth(true);
+      const res = await fetch('/api/dashboard/scans');
+      if (res.ok) {
+        const data = await res.json();
+        setScans(data.scans || []);
       }
     } catch {
-      setShowAuth(true);
+      // silently fail
     }
     setLoading(false);
   }
@@ -49,12 +33,6 @@ export default function DashboardPage() {
       </div>
     );
   }
-
-  if (showAuth && !isAuthenticated) {
-    return <AuthModal onClose={() => setShowAuth(false)} onSuccess={checkAuth} />;
-  }
-
-  const planLimit = user ? PLAN_LIMITS[user.plan] : PLAN_LIMITS.free;
 
   return (
     <main className="min-h-screen">
@@ -70,11 +48,9 @@ export default function DashboardPage() {
             <span className="font-bold text-lg">ValidateIQ</span>
           </a>
           <div className="flex items-center gap-4">
-            {user && (
-              <span className="text-xs text-zinc-500">
-                {user.email}
-              </span>
-            )}
+            <span className="text-xs px-2 py-0.5 bg-amber-500/20 text-amber-400 rounded-full border border-amber-500/30">
+              Admin Mode
+            </span>
           </div>
         </div>
       </nav>
@@ -88,47 +64,59 @@ export default function DashboardPage() {
         >
           <div>
             <h1 className="text-2xl font-bold">Dashboard</h1>
-            <p className="text-sm text-zinc-500 mt-1">Your validation scan history</p>
+            <p className="text-sm text-zinc-500 mt-1">All validation scans</p>
           </div>
-          <a
-            href="/"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-xl hover:bg-brand-500 transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-            </svg>
-            New Scan
-          </a>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={fetchScans}
+              className="inline-flex items-center gap-2 px-4 py-2 text-zinc-400 text-sm border border-zinc-800 rounded-xl hover:border-zinc-700 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
+            </button>
+            <a
+              href="/"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-xl hover:bg-brand-500 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              New Scan
+            </a>
+          </div>
         </motion.div>
 
-        {/* Usage Card */}
+        {/* Stats Bar */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="glass-card rounded-xl p-6 mb-8"
+          className="grid grid-cols-3 gap-4 mb-8"
         >
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-zinc-400">Scan Usage</h3>
-            <span className="text-xs px-2 py-0.5 bg-brand-500/20 text-brand-400 rounded-full border border-brand-500/30 capitalize">
-              {user?.plan || 'free'} Plan
-            </span>
+          <div className="glass-card rounded-xl p-5">
+            <p className="text-xs text-zinc-500 mb-1">Total Scans</p>
+            <p className="text-2xl font-bold tabular-nums">{scans.length}</p>
           </div>
-          <div className="flex items-end gap-2 mb-2">
-            <span className="text-3xl font-bold tabular-nums">
-              {user?.scans_this_month || 0}
-            </span>
-            <span className="text-zinc-500 text-sm mb-1">
-              / {planLimit.scansPerMonth === 999999 ? 'Unlimited' : planLimit.scansPerMonth} scans this month
-            </span>
+          <div className="glass-card rounded-xl p-5">
+            <p className="text-xs text-zinc-500 mb-1">Completed</p>
+            <p className="text-2xl font-bold tabular-nums text-green-400">
+              {scans.filter((s) => s.status === 'completed').length}
+            </p>
           </div>
-          <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-brand-500 rounded-full transition-all"
-              style={{
-                width: `${Math.min(100, ((user?.scans_this_month || 0) / planLimit.scansPerMonth) * 100)}%`,
-              }}
-            />
+          <div className="glass-card rounded-xl p-5">
+            <p className="text-xs text-zinc-500 mb-1">Avg Score</p>
+            <p className="text-2xl font-bold tabular-nums text-brand-400">
+              {scans.filter((s) => s.report).length > 0
+                ? Math.round(
+                    scans
+                      .filter((s) => s.report)
+                      .reduce((sum, s) => sum + (s.report?.overallScore || 0), 0) /
+                      scans.filter((s) => s.report).length
+                  )
+                : '-'}
+            </p>
           </div>
         </motion.div>
 
@@ -140,7 +128,8 @@ export default function DashboardPage() {
             transition={{ delay: 0.2 }}
             className="text-center py-20"
           >
-            <p className="text-zinc-500">No scans yet. Run your first validation scan.</p>
+            <p className="text-zinc-500 mb-2">No scans yet.</p>
+            <p className="text-zinc-600 text-sm">Run your first validation scan to see it here.</p>
             <a
               href="/"
               className="inline-flex items-center gap-2 mt-4 px-4 py-2 text-brand-400 text-sm hover:text-brand-300 transition-colors"
@@ -172,20 +161,28 @@ export default function DashboardPage() {
                       <span className="text-zinc-700">|</span>
                       <span>{scan.timeframe} day analysis</span>
                       <span className="text-zinc-700">|</span>
-                      <span className={
-                        scan.status === 'completed'
-                          ? 'text-green-400'
-                          : scan.status === 'failed'
-                          ? 'text-red-400'
-                          : 'text-yellow-400'
-                      }>
+                      <span
+                        className={
+                          scan.status === 'completed'
+                            ? 'text-green-400'
+                            : scan.status === 'failed'
+                            ? 'text-red-400'
+                            : 'text-yellow-400'
+                        }
+                      >
                         {scan.status}
                       </span>
+                      <span className="text-zinc-700">|</span>
+                      <span className="font-mono text-zinc-600">{scan.id.slice(0, 8)}</span>
                     </div>
                   </div>
                   {scan.report && (
                     <div className="ml-4 flex-shrink-0">
-                      <span className={`text-2xl font-bold tabular-nums ${getScoreColor(scan.report.overallScore)}`}>
+                      <span
+                        className={`text-2xl font-bold tabular-nums ${getScoreColor(
+                          scan.report.overallScore
+                        )}`}
+                      >
                         {scan.report.overallScore}
                       </span>
                     </div>
