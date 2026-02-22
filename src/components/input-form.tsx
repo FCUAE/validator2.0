@@ -40,7 +40,16 @@ export default function InputForm() {
         throw new Error(data.error || 'Failed to start scan');
       }
 
-      const { scanId } = await res.json();
+      const { scanId, cached } = await res.json();
+
+      // Store scan params so the scan page can pass them to the streaming endpoint
+      if (!cached) {
+        sessionStorage.setItem(
+          `scan_params_${scanId}`,
+          JSON.stringify({ idea: idea.trim(), audience: audience.trim(), timeframe })
+        );
+      }
+
       router.push(`/scan/${scanId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');

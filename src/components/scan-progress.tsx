@@ -1,31 +1,36 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SOURCE_LIST } from '@/types/report';
+import type { ValidationReport } from '@/types/report';
 
 interface ScanProgressProps {
   scanId: string;
-  onComplete: () => void;
+  idea?: string;
+  audience?: string;
+  timeframe?: number;
+  onComplete: (report: ValidationReport) => void;
 }
 
-interface ScanStatus {
-  status: 'pending' | 'scanning' | 'completed' | 'failed';
-  progress: number;
-  current_source: string | null;
-}
-
-export default function ScanProgress({ scanId, onComplete }: ScanProgressProps) {
-  const [status, setStatus] = useState<ScanStatus>({
-    status: 'pending',
-    progress: 0,
-    current_source: null,
-  });
+export default function ScanProgress({
+  scanId,
+  idea,
+  audience,
+  timeframe,
+  onComplete,
+}: ScanProgressProps) {
   const [completedSources, setCompletedSources] = useState<Set<string>>(new Set());
+  const [activeScanningSource, setActiveScanningSource] = useState<string | null>(null);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const startTimeRef = useRef(Date.now());
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+  // Track completed source IDs across SSE events (avoids stale closure issues)
+  const completedIdsRef = useRef<Set<string>>(new Set());
 
   // Elapsed time counter
   useEffect(() => {
@@ -35,56 +40,122 @@ export default function ScanProgress({ scanId, onComplete }: ScanProgressProps) 
     return () => clearInterval(timer);
   }, []);
 
-  const onCompleteStable = useCallback(onComplete, [onComplete]);
-
+  // Connect to SSE streaming endpoint
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    if (!idea || !audience) {
+      setError('Missing scan parameters. Please start a new scan.');
+      return;
+    }
 
-    const poll = async () => {
+    const abortController = new AbortController();
+
+    async function runStreamingScan() {
       try {
-        const res = await fetch(`/api/scan/${scanId}`);
-        if (!res.ok) throw new Error('Failed to fetch scan status');
-        const data: ScanStatus = await res.json();
-        setStatus(data);
+        setProgress(2);
 
-        // Parse completed sources from current_source field
-        if (data.current_source) {
-          if (data.current_source === 'ai_synthesis') {
-            // All sources done, AI is synthesizing
-            setCompletedSources(new Set(SOURCE_LIST.map((s) => s.id)));
-            setIsSynthesizing(true);
-          } else {
-            // current_source is a comma-separated list of completed source IDs
-            const ids = data.current_source.split(',').filter(Boolean);
-            setCompletedSources(new Set(ids));
+        const response = await fetch(`/api/scan/${scanId}/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idea, audience, timeframe: timeframe ?? 30 }),
+          signal: abortController.signal,
+        });
+
+        if (!response.ok || !response.body) {
+          setError('Failed to start scan. Please try again.');
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // Parse SSE events (delimited by double newlines)
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop() || '';
+
+          for (const part of parts) {
+            const line = part.trim();
+            if (!line.startsWith('data: ')) continue;
+
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              switch (data.type) {
+                case 'started':
+                  setProgress(5);
+                  break;
+
+                case 'source_complete': {
+                  const sourceId = data.sourceId as string;
+                  completedIdsRef.current.add(sourceId);
+                  setCompletedSources(new Set(completedIdsRef.current));
+
+                  const completedCount = data.completedCount as number;
+                  const total = data.totalSources as number;
+
+                  // Find first still-pending source for the spinner
+                  const nextPending = SOURCE_LIST.find(
+                    (s) => !completedIdsRef.current.has(s.id)
+                  );
+                  setActiveScanningSource(nextPending?.id ?? null);
+
+                  const pct = Math.round((completedCount / total) * 70) + 5;
+                  setProgress(pct);
+                  break;
+                }
+
+                case 'synthesizing':
+                  setIsSynthesizing(true);
+                  setActiveScanningSource(null);
+                  completedIdsRef.current = new Set(SOURCE_LIST.map((s) => s.id));
+                  setCompletedSources(new Set(SOURCE_LIST.map((s) => s.id)));
+                  setProgress(80);
+                  break;
+
+                case 'complete': {
+                  setProgress(100);
+                  setIsSynthesizing(false);
+                  completedIdsRef.current = new Set(SOURCE_LIST.map((s) => s.id));
+                  setCompletedSources(new Set(SOURCE_LIST.map((s) => s.id)));
+                  // Brief delay for the 100% animation to show
+                  setTimeout(() => {
+                    onCompleteRef.current(data.report as ValidationReport);
+                  }, 800);
+                  break;
+                }
+
+                case 'error':
+                  setError(data.message || 'Scan failed. Please try again.');
+                  break;
+              }
+            } catch {
+              // Skip malformed SSE events
+            }
           }
         }
-
-        if (data.status === 'completed') {
-          setCompletedSources(new Set(SOURCE_LIST.map((s) => s.id)));
-          setIsSynthesizing(false);
-          clearInterval(interval);
-          setTimeout(onCompleteStable, 800);
-        } else if (data.status === 'failed') {
-          clearInterval(interval);
-          setError('Scan failed. Please try again.');
-        }
-      } catch {
-        // Continue polling on error
+      } catch (err: unknown) {
+        if (abortController.signal.aborted) return;
+        const message =
+          err instanceof Error ? err.message : 'Connection lost';
+        setError(`${message}. Please refresh and try again.`);
       }
-    };
+    }
 
-    poll();
-    interval = setInterval(poll, 1500);
-
-    return () => clearInterval(interval);
-  }, [scanId, onCompleteStable]);
+    runStreamingScan();
+    return () => abortController.abort();
+  }, [scanId, idea, audience, timeframe]);
 
   const getSourceStatus = (sourceId: string): 'pending' | 'scanning' | 'complete' => {
     if (completedSources.has(sourceId)) return 'complete';
-    if (status.status === 'completed') return 'complete';
-    // Show a "scanning" spinner on the next uncompleted source to indicate activity
-    if (status.status === 'scanning' && !isSynthesizing) {
+    if (activeScanningSource === sourceId) return 'scanning';
+    // If no specific active source is set but we're scanning, show the first pending as scanning
+    if (!activeScanningSource && !isSynthesizing && progress > 0 && progress < 75) {
       const firstPending = SOURCE_LIST.find((s) => !completedSources.has(s.id));
       if (firstPending && firstPending.id === sourceId) return 'scanning';
     }
@@ -127,14 +198,14 @@ export default function ScanProgress({ scanId, onComplete }: ScanProgressProps) 
           </span>
           <div className="flex items-center gap-3">
             <span className="text-zinc-500 text-xs font-mono">{formatTime(elapsedSeconds)}</span>
-            <span className="text-brand-400 font-mono">{status.progress}%</span>
+            <span className="text-brand-400 font-mono">{progress}%</span>
           </div>
         </div>
         <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
           <motion.div
             className="h-full bg-gradient-to-r from-brand-600 to-brand-400 rounded-full"
             initial={{ width: '0%' }}
-            animate={{ width: `${status.progress}%` }}
+            animate={{ width: `${progress}%` }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
           />
         </div>

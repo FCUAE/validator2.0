@@ -30,10 +30,16 @@ export default function ScanPage() {
   const [showReport, setShowReport] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [loading, setLoading] = useState(true);
+  const [scanParams, setScanParams] = useState<{
+    idea: string;
+    audience: string;
+    timeframe: number;
+  } | null>(null);
 
-  // Check if scan already has a report on load
+  // Check if scan already has a report, or load params for a new streaming scan
   useEffect(() => {
     async function checkScan() {
+      // First, try to load a completed scan from the backend (works with Supabase)
       try {
         const res = await fetch(`/api/scan/${scanId}`);
         if (res.ok) {
@@ -42,28 +48,36 @@ export default function ScanPage() {
           if (data.status === 'completed' && data.report) {
             setReport(data.report);
             setShowReport(true);
+            setLoading(false);
+            return;
           }
         }
       } catch {
-        // Will show scanning UI
+        // Backend check failed — continue to sessionStorage
+      }
+
+      // Load scan params from sessionStorage for a new streaming scan
+      try {
+        const stored = sessionStorage.getItem(`scan_params_${scanId}`);
+        if (stored) {
+          setScanParams(JSON.parse(stored));
+        }
+      } catch {
+        // sessionStorage access failed
       }
       setLoading(false);
     }
     checkScan();
   }, [scanId]);
 
-  const handleScanComplete = useCallback(async () => {
+  const handleScanComplete = useCallback((completedReport: ValidationReport) => {
+    setReport(completedReport);
+    setScan((prev) => prev ? { ...prev, status: 'completed', report: completedReport } : null);
+    setShowReport(true);
+    // Clean up sessionStorage
     try {
-      const res = await fetch(`/api/scan/${scanId}/report`);
-      if (res.ok) {
-        const data = await res.json();
-        setReport(data.report);
-        setScan(data);
-        setShowReport(true);
-      }
-    } catch {
-      // Error handled in scan progress
-    }
+      sessionStorage.removeItem(`scan_params_${scanId}`);
+    } catch { /* ignore */ }
   }, [scanId]);
 
   if (loading) {
@@ -103,7 +117,13 @@ export default function ScanPage() {
               exit={{ opacity: 0, scale: 0.95 }}
               className="flex items-center justify-center min-h-[60vh]"
             >
-              <ScanProgress scanId={scanId} onComplete={handleScanComplete} />
+              <ScanProgress
+                scanId={scanId}
+                idea={scanParams?.idea}
+                audience={scanParams?.audience}
+                timeframe={scanParams?.timeframe}
+                onComplete={handleScanComplete}
+              />
             </motion.div>
           ) : report ? (
             <motion.div
