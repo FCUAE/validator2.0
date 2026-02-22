@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createScan, findCachedScan } from '@/lib/db/queries';
 
+// Allow up to 60 seconds for Vercel serverless
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -66,18 +69,20 @@ async function processInBackground(
 
   try {
     // Update status to scanning
-    await updateScanProgress(scanId, 5, 'initializing');
+    await updateScanProgress(scanId, 5, null);
 
-    // Run all source adapters in parallel
-    let completedCount = 0;
+    // Track completed sources as a comma-separated list in current_source
+    const completedSourceIds: string[] = [];
+
     const sourceResults = await runAllAdapters(
       idea,
       audience,
       timeframe,
-      async (sourceId, _index) => {
-        completedCount++;
+      async (sourceId, completedCount) => {
+        completedSourceIds.push(sourceId);
         const progress = Math.round((completedCount / SOURCE_LIST.length) * 70) + 5;
-        await updateScanProgress(scanId, progress, sourceId);
+        // Store all completed sources so the frontend can track them
+        await updateScanProgress(scanId, progress, completedSourceIds.join(','));
       }
     );
 

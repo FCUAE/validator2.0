@@ -30,14 +30,20 @@ export async function runAllAdapters(
   query: string,
   audience: string,
   timeframeDays: number,
-  onProgress?: (sourceId: string, index: number) => void
+  onSourceComplete?: (sourceId: string, completedCount: number) => void
 ): Promise<SourceResult[]> {
+  let completedCount = 0;
+
   const results = await Promise.allSettled(
-    sourceAdapters.map(async (adapter, index) => {
-      onProgress?.(adapter.id, index);
+    sourceAdapters.map(async (adapter) => {
       try {
-        return await adapter.scan(query, audience, timeframeDays);
+        const result = await adapter.scan(query, audience, timeframeDays);
+        completedCount++;
+        onSourceComplete?.(adapter.id, completedCount);
+        return result;
       } catch {
+        completedCount++;
+        onSourceComplete?.(adapter.id, completedCount);
         return createEmptyResult(adapter.id);
       }
     })
