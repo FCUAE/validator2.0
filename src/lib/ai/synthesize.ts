@@ -19,7 +19,7 @@ export async function synthesizeReport(
   const userMessage = buildUserPrompt(idea, audience, timeframeDays, sourceResults);
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-6-20250514',
+    model: 'claude-sonnet-4-20250514',
     max_tokens: 4096,
     messages: [
       {
