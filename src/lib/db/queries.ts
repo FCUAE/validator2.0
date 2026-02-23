@@ -59,6 +59,8 @@ export async function createScan(
     report: null,
     created_at: new Date().toISOString(),
     completed_at: null,
+    updated_at: new Date().toISOString(),
+    error_message: null,
   };
   memoryStore.set(scan.id, scan);
   return scan;

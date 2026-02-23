@@ -50,7 +50,7 @@ export default function SourceBreakdown({ sources }: SourceBreakdownProps) {
                   </span>
                   <span className="text-zinc-600">|</span>
                   <span className="text-zinc-400">
-                    {data.signalCount} signals
+                    {data.signalCount ?? 0} signals
                   </span>
                   <span className="text-zinc-600">|</span>
                   {data.trending ? (

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import ScanProgress from '@/components/scan-progress';
 import ScoreRing from '@/components/report/score-ring';
@@ -24,12 +24,14 @@ const TABS: { id: TabId; label: string }[] = [
 
 export default function ScanPage() {
   const params = useParams();
+  const router = useRouter();
   const scanId = params.id as string;
   const [scan, setScan] = useState<Scan | null>(null);
   const [report, setReport] = useState<ValidationReport | null>(null);
   const [showReport, setShowReport] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [scanParams, setScanParams] = useState<{
     idea: string;
     audience: string;
@@ -39,7 +41,6 @@ export default function ScanPage() {
   // Check if scan already has a report, or load params for a new streaming scan
   useEffect(() => {
     async function checkScan() {
-      // First, try to load a completed scan from the backend (works with Supabase)
       try {
         const res = await fetch(`/api/scan/${scanId}`);
         if (res.ok) {
@@ -48,6 +49,10 @@ export default function ScanPage() {
           if (data.status === 'completed' && data.report) {
             setReport(data.report);
             setShowReport(true);
+            setLoading(false);
+            return;
+          } else if (data.status === 'failed') {
+            setError(data.error_message || 'This scan failed. Please start a new one.');
             setLoading(false);
             return;
           }
@@ -109,7 +114,29 @@ export default function ScanPage() {
 
       <div className="max-w-6xl mx-auto px-6 py-12">
         <AnimatePresence mode="wait">
-          {!showReport ? (
+          {error && !showReport ? (
+            <motion.div
+              key="error"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex items-center justify-center min-h-[60vh]"
+            >
+              <div className="w-full max-w-md text-center">
+                <div className="p-6 bg-red-500/10 border border-red-500/20 rounded-xl">
+                  <svg className="w-10 h-10 text-red-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-sm text-red-300 mb-4">{error}</p>
+                  <button
+                    onClick={() => router.push('/')}
+                    className="px-6 py-2.5 text-sm font-medium rounded-lg bg-brand-600 text-white hover:bg-brand-500 transition-colors"
+                  >
+                    Start New Scan
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          ) : !showReport ? (
             <motion.div
               key="scanning"
               initial={{ opacity: 0 }}
@@ -140,14 +167,14 @@ export default function ScanPage() {
                   </p>
                 )}
                 <div className="flex justify-center mb-6">
-                  <ScoreRing score={report.overallScore} label="Validation Score" />
+                  <ScoreRing score={report.overallScore ?? 0} label="Validation Score" />
                 </div>
                 <span
                   className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${getConfidenceBadgeColor(
-                    report.confidence
+                    report.confidence ?? 'Low'
                   )}`}
                 >
-                  {report.confidence} Confidence
+                  {report.confidence ?? 'Low'} Confidence
                 </span>
               </div>
 
@@ -181,17 +208,17 @@ export default function ScanPage() {
                 >
                   {activeTab === 'overview' && (
                     <div className="space-y-8">
-                      <DimensionsGrid dimensions={report.dimensions} />
-                      <AiVerdict verdict={report.verdict} />
+                      <DimensionsGrid dimensions={report.dimensions ?? []} />
+                      <AiVerdict verdict={report.verdict ?? 'No verdict available.'} />
                     </div>
                   )}
                   {activeTab === 'sources' && (
-                    <SourceBreakdown sources={report.sources} />
+                    <SourceBreakdown sources={report.sources ?? {}} />
                   )}
                   {activeTab === 'recommendations' && (
-                    <Recommendations recommendations={report.recommendations} />
+                    <Recommendations recommendations={report.recommendations ?? []} />
                   )}
-                  {activeTab === 'audience' && (
+                  {activeTab === 'audience' && report.audienceInsights && (
                     <AudienceIntel insights={report.audienceInsights} />
                   )}
                 </motion.div>

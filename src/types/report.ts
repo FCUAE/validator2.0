@@ -68,6 +68,8 @@ export interface Scan {
   report: ValidationReport | null;
   created_at: string;
   completed_at: string | null;
+  updated_at: string | null;
+  error_message: string | null;
 }
 
 export type PlanTier = 'free' | 'pro' | 'teams';

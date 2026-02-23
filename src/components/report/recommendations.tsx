@@ -41,7 +41,7 @@ export default function Recommendations({ recommendations }: RecommendationsProp
           <p className="text-sm text-zinc-400 mb-3">{rec.description}</p>
 
           <div className="flex flex-wrap gap-1.5">
-            {rec.sources.map((source) => (
+            {(rec.sources ?? []).map((source) => (
               <span
                 key={source}
                 className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-zinc-800 text-zinc-400 border border-zinc-700/50"
