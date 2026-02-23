@@ -48,9 +48,10 @@ export async function synthesizeReport(
   if (
     typeof report.overallScore !== 'number' ||
     !report.confidence ||
-    !report.dimensions ||
+    !report.sources ||
+    !Array.isArray(report.dimensions) ||
     !report.verdict ||
-    !report.recommendations ||
+    !Array.isArray(report.recommendations) ||
     !report.audienceInsights
   ) {
     throw new Error('AI response missing required fields');

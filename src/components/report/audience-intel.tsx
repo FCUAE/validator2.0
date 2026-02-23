@@ -29,7 +29,7 @@ export default function AudienceIntel({ insights }: AudienceIntelProps) {
       >
         <h4 className="text-sm font-medium text-zinc-400 mb-4">Top Pain Points</h4>
         <div className="space-y-3">
-          {insights.topPainPoints.map((point, index) => (
+          {(insights.topPainPoints ?? []).map((point, index) => (
             <motion.div
               key={index}
               initial={{ opacity: 0, x: -10 }}
@@ -58,7 +58,7 @@ export default function AudienceIntel({ insights }: AudienceIntelProps) {
           Topics your audience is searching for but not finding good answers to
         </p>
         <div className="flex flex-wrap gap-2">
-          {insights.contentGaps.map((gap, index) => (
+          {(insights.contentGaps ?? []).map((gap, index) => (
             <motion.span
               key={index}
               initial={{ opacity: 0, scale: 0.8 }}

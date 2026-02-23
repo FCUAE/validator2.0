@@ -25,6 +25,8 @@ export async function GET(
       audience: scan.audience,
       timeframe: scan.timeframe,
       created_at: scan.created_at,
+      updated_at: scan.updated_at ?? scan.created_at,
+      error_message: scan.error_message ?? null,
       // Only include report if completed
       ...(scan.status === 'completed' ? { report: scan.report } : {}),
     });
