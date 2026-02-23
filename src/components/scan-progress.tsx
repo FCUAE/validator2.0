@@ -21,6 +21,7 @@ export default function ScanProgress({
   onComplete,
 }: ScanProgressProps) {
   const [completedSources, setCompletedSources] = useState<Set<string>>(new Set());
+  const [failedSources, setFailedSources] = useState<Set<string>>(new Set());
   const [activeScanningSource, setActiveScanningSource] = useState<string | null>(null);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -29,8 +30,9 @@ export default function ScanProgress({
   const startTimeRef = useRef(Date.now());
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
-  // Track completed source IDs across SSE events (avoids stale closure issues)
+  // Track completed/failed source IDs across SSE events (avoids stale closure issues)
   const completedIdsRef = useRef<Set<string>>(new Set());
+  const failedIdsRef = useRef<Set<string>>(new Set());
 
   // Elapsed time counter
   useEffect(() => {
@@ -93,15 +95,23 @@ export default function ScanProgress({
 
                 case 'source_complete': {
                   const sourceId = data.sourceId as string;
-                  completedIdsRef.current.add(sourceId);
-                  setCompletedSources(new Set(completedIdsRef.current));
+                  const available = data.available as boolean;
+
+                  if (available) {
+                    completedIdsRef.current.add(sourceId);
+                    setCompletedSources(new Set(completedIdsRef.current));
+                  } else {
+                    failedIdsRef.current.add(sourceId);
+                    setFailedSources(new Set(failedIdsRef.current));
+                  }
 
                   const completedCount = data.completedCount as number;
                   const total = data.totalSources as number;
 
                   // Find first still-pending source for the spinner
+                  const allDone = new Set([...completedIdsRef.current, ...failedIdsRef.current]);
                   const nextPending = SOURCE_LIST.find(
-                    (s) => !completedIdsRef.current.has(s.id)
+                    (s) => !allDone.has(s.id)
                   );
                   setActiveScanningSource(nextPending?.id ?? null);
 
@@ -113,16 +123,12 @@ export default function ScanProgress({
                 case 'synthesizing':
                   setIsSynthesizing(true);
                   setActiveScanningSource(null);
-                  completedIdsRef.current = new Set(SOURCE_LIST.map((s) => s.id));
-                  setCompletedSources(new Set(SOURCE_LIST.map((s) => s.id)));
                   setProgress(80);
                   break;
 
                 case 'complete': {
                   setProgress(100);
                   setIsSynthesizing(false);
-                  completedIdsRef.current = new Set(SOURCE_LIST.map((s) => s.id));
-                  setCompletedSources(new Set(SOURCE_LIST.map((s) => s.id)));
                   // Brief delay for the 100% animation to show
                   setTimeout(() => {
                     onCompleteRef.current(data.report as ValidationReport);
@@ -151,12 +157,14 @@ export default function ScanProgress({
     return () => abortController.abort();
   }, [scanId, idea, audience, timeframe]);
 
-  const getSourceStatus = (sourceId: string): 'pending' | 'scanning' | 'complete' => {
+  const getSourceStatus = (sourceId: string): 'pending' | 'scanning' | 'complete' | 'failed' => {
     if (completedSources.has(sourceId)) return 'complete';
+    if (failedSources.has(sourceId)) return 'failed';
     if (activeScanningSource === sourceId) return 'scanning';
     // If no specific active source is set but we're scanning, show the first pending as scanning
     if (!activeScanningSource && !isSynthesizing && progress > 0 && progress < 75) {
-      const firstPending = SOURCE_LIST.find((s) => !completedSources.has(s.id));
+      const allDone = new Set([...completedSources, ...failedSources]);
+      const firstPending = SOURCE_LIST.find((s) => !allDone.has(s.id));
       if (firstPending && firstPending.id === sourceId) return 'scanning';
     }
     return 'pending';
@@ -168,7 +176,9 @@ export default function ScanProgress({
     return m > 0 ? `${m}m ${s}s` : `${s}s`;
   };
 
-  const completedCount = completedSources.size;
+  const successCount = completedSources.size;
+  const failCount = failedSources.size;
+  const doneCount = successCount + failCount;
   const totalSources = SOURCE_LIST.length;
 
   return (
@@ -194,7 +204,7 @@ export default function ScanProgress({
           <span className="text-zinc-400">
             {isSynthesizing
               ? 'AI Synthesis'
-              : `${completedCount} of ${totalSources} sources scanned`}
+              : `${doneCount} of ${totalSources} sources scanned${failCount > 0 ? ` (${failCount} unavailable)` : ''}`}
           </span>
           <div className="flex items-center gap-3">
             <span className="text-zinc-500 text-xs font-mono">{formatTime(elapsedSeconds)}</span>
@@ -227,6 +237,8 @@ export default function ScanProgress({
                     ? 'bg-brand-500/10 border-brand-500/30'
                     : sourceStatus === 'complete'
                     ? 'bg-green-500/10 border-green-500/30'
+                    : sourceStatus === 'failed'
+                    ? 'bg-amber-500/5 border-amber-500/20'
                     : 'bg-zinc-900/30 border-zinc-800/50'
                 }`}
               >
@@ -236,6 +248,8 @@ export default function ScanProgress({
                     ? 'text-green-300'
                     : sourceStatus === 'scanning'
                     ? 'text-brand-300'
+                    : sourceStatus === 'failed'
+                    ? 'text-amber-400/70'
                     : 'text-zinc-500'
                 }`}>
                   {source.name}
@@ -278,7 +292,7 @@ export default function ScanProgress({
   );
 }
 
-function StatusIndicator({ status }: { status: 'pending' | 'scanning' | 'complete' }) {
+function StatusIndicator({ status }: { status: 'pending' | 'scanning' | 'complete' | 'failed' }) {
   switch (status) {
     case 'complete':
       return (
@@ -289,6 +303,18 @@ function StatusIndicator({ status }: { status: 'pending' | 'scanning' | 'complet
         >
           <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </motion.div>
+      );
+    case 'failed':
+      return (
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          className="w-5 h-5 rounded-full bg-amber-500/15 flex items-center justify-center"
+        >
+          <svg className="w-3 h-3 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01" />
           </svg>
         </motion.div>
       );
