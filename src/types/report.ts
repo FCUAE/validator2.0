@@ -56,11 +56,15 @@ export interface ValidationReport {
   audienceInsights: AudienceInsights;
 }
 
+export type ScanMode = 'idea' | 'feature';
+
 export interface Scan {
   id: string;
   user_id: string | null;
+  mode: ScanMode;
   idea: string;
   audience: string;
+  startup_context: string | null;
   timeframe: number;
   status: 'pending' | 'scanning' | 'completed' | 'failed';
   progress: number;

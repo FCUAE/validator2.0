@@ -24,8 +24,10 @@ export async function GET(
 
     return NextResponse.json({
       id: scan.id,
+      mode: scan.mode ?? 'idea',
       idea: scan.idea,
       audience: scan.audience,
+      startup_context: scan.startup_context ?? null,
       timeframe: scan.timeframe,
       report: scan.report,
       created_at: scan.created_at,

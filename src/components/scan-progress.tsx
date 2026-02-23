@@ -3,20 +3,24 @@
 import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SOURCE_LIST } from '@/types/report';
-import type { ValidationReport } from '@/types/report';
+import type { ValidationReport, ScanMode } from '@/types/report';
 
 interface ScanProgressProps {
   scanId: string;
+  mode?: ScanMode;
   idea?: string;
   audience?: string;
+  startupContext?: string | null;
   timeframe?: number;
   onComplete: (report: ValidationReport) => void;
 }
 
 export default function ScanProgress({
   scanId,
+  mode = 'idea',
   idea,
   audience,
+  startupContext,
   timeframe,
   onComplete,
 }: ScanProgressProps) {
@@ -33,6 +37,8 @@ export default function ScanProgress({
   // Track completed/failed source IDs across SSE events (avoids stale closure issues)
   const completedIdsRef = useRef<Set<string>>(new Set());
   const failedIdsRef = useRef<Set<string>>(new Set());
+
+  const isFeatureMode = mode === 'feature';
 
   // Elapsed time counter
   useEffect(() => {
@@ -58,7 +64,13 @@ export default function ScanProgress({
         const response = await fetch(`/api/scan/${scanId}/run`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idea, audience, timeframe: timeframe ?? 30 }),
+          body: JSON.stringify({
+            idea,
+            audience,
+            timeframe: timeframe ?? 30,
+            mode,
+            startupContext: startupContext ?? null,
+          }),
           signal: abortController.signal,
         });
 
@@ -155,7 +167,7 @@ export default function ScanProgress({
 
     runStreamingScan();
     return () => abortController.abort();
-  }, [scanId, idea, audience, timeframe]);
+  }, [scanId, idea, audience, timeframe, mode, startupContext]);
 
   const getSourceStatus = (sourceId: string): 'pending' | 'scanning' | 'complete' | 'failed' => {
     if (completedSources.has(sourceId)) return 'complete';
@@ -189,11 +201,17 @@ export default function ScanProgress({
         className="text-center mb-8"
       >
         <h2 className="text-2xl font-bold mb-2">
-          {isSynthesizing ? 'Analyzing Results' : 'Scanning Platforms'}
+          {isSynthesizing
+            ? 'Analyzing Results'
+            : isFeatureMode
+            ? 'Validating Feature'
+            : 'Scanning Platforms'}
         </h2>
         <p className="text-zinc-400">
           {isSynthesizing
-            ? 'AI is synthesizing insights from all sources...'
+            ? isFeatureMode
+              ? 'AI is evaluating feature viability from all sources...'
+              : 'AI is synthesizing insights from all sources...'
             : `Checking ${totalSources} platforms for demand signals and sentiment...`}
         </p>
       </motion.div>
@@ -272,7 +290,9 @@ export default function ScanProgress({
           <div className="flex-1">
             <p className="text-sm font-medium text-brand-300">AI Synthesis in progress</p>
             <p className="text-xs text-zinc-500 mt-0.5">
-              Claude is analyzing patterns across all sources to generate your report...
+              {isFeatureMode
+                ? 'Claude is evaluating feature demand, alternatives, and launch strategy...'
+                : 'Claude is analyzing patterns across all sources to generate your report...'}
             </p>
           </div>
         </motion.div>

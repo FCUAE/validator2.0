@@ -10,7 +10,7 @@ import AiVerdict from '@/components/report/ai-verdict';
 import SourceBreakdown from '@/components/report/source-breakdown';
 import Recommendations from '@/components/report/recommendations';
 import AudienceIntel from '@/components/report/audience-intel';
-import type { ValidationReport, Scan } from '@/types/report';
+import type { ValidationReport, Scan, ScanMode } from '@/types/report';
 import { getConfidenceBadgeColor } from '@/lib/utils';
 
 type TabId = 'overview' | 'sources' | 'recommendations' | 'audience';
@@ -33,10 +33,15 @@ export default function ScanPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [scanParams, setScanParams] = useState<{
+    mode?: ScanMode;
     idea: string;
     audience: string;
+    startupContext?: string | null;
     timeframe: number;
   } | null>(null);
+
+  const scanMode: ScanMode = scan?.mode ?? scanParams?.mode ?? 'idea';
+  const isFeatureMode = scanMode === 'feature';
 
   // Check if scan already has a report, or load params for a new streaming scan
   useEffect(() => {
@@ -146,8 +151,10 @@ export default function ScanPage() {
             >
               <ScanProgress
                 scanId={scanId}
+                mode={scanParams?.mode}
                 idea={scanParams?.idea}
                 audience={scanParams?.audience}
+                startupContext={scanParams?.startupContext}
                 timeframe={scanParams?.timeframe}
                 onComplete={handleScanComplete}
               />
@@ -161,13 +168,26 @@ export default function ScanPage() {
             >
               {/* Report Header */}
               <div className="text-center mb-10">
+                {isFeatureMode && scan?.startup_context && (
+                  <p className="text-xs text-zinc-600 mb-1">
+                    {scan.startup_context}
+                  </p>
+                )}
                 {scan && (
-                  <p className="text-sm text-zinc-500 mb-4 max-w-xl mx-auto truncate">
+                  <p className="text-sm text-zinc-500 mb-2 max-w-xl mx-auto truncate">
                     {scan.idea}
                   </p>
                 )}
+                {isFeatureMode && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-brand-500/10 border border-brand-500/20 text-brand-400 mb-4">
+                    Feature Validation
+                  </span>
+                )}
                 <div className="flex justify-center mb-6">
-                  <ScoreRing score={report.overallScore ?? 0} label="Validation Score" />
+                  <ScoreRing
+                    score={report.overallScore ?? 0}
+                    label={isFeatureMode ? 'Feature Score' : 'Validation Score'}
+                  />
                 </div>
                 <span
                   className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${getConfidenceBadgeColor(

@@ -40,15 +40,15 @@ export default function Home() {
           </div>
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-4 leading-tight">
-            Validate Your Startup Idea
+            Validate Ideas & Features
             <br />
             <span className="gradient-text">Before You Build</span>
           </h1>
 
           <p className="text-zinc-400 text-lg max-w-xl mx-auto">
             Get a data-backed, multi-source validation report for any startup
-            idea in under 60 seconds. Know what your market wants before you
-            build.
+            idea or feature in under 60 seconds. Know what your market wants
+            before you build.
           </p>
         </motion.div>
 

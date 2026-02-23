@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { SOURCE_LIST } from '@/types/report';
+import type { ScanMode } from '@/types/report';
 
 const TIMEFRAMES = [
   { value: 7, label: '7 Days' },
@@ -11,18 +12,31 @@ const TIMEFRAMES = [
   { value: 90, label: '90 Days' },
 ];
 
+const MODES: { value: ScanMode; label: string; description: string }[] = [
+  { value: 'idea', label: 'Startup Idea', description: 'Validate a new startup concept' },
+  { value: 'feature', label: 'Feature / Tool', description: 'Validate a feature for your startup' },
+];
+
 export default function InputForm() {
   const router = useRouter();
+  const [mode, setMode] = useState<ScanMode>('idea');
   const [idea, setIdea] = useState('');
+  const [startupContext, setStartupContext] = useState('');
   const [audience, setAudience] = useState('');
   const [timeframe, setTimeframe] = useState(30);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  const isFeatureMode = mode === 'feature';
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!idea.trim() || !audience.trim()) {
       setError('Please fill in both the idea and target audience.');
+      return;
+    }
+    if (isFeatureMode && !startupContext.trim()) {
+      setError('Please describe your existing startup.');
       return;
     }
     setError('');
@@ -32,7 +46,13 @@ export default function InputForm() {
       const res = await fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idea: idea.trim(), audience: audience.trim(), timeframe }),
+        body: JSON.stringify({
+          mode,
+          idea: idea.trim(),
+          audience: audience.trim(),
+          startupContext: isFeatureMode ? startupContext.trim() : null,
+          timeframe,
+        }),
       });
 
       if (!res.ok) {
@@ -42,11 +62,16 @@ export default function InputForm() {
 
       const { scanId, cached } = await res.json();
 
-      // Store scan params so the scan page can pass them to the streaming endpoint
       if (!cached) {
         sessionStorage.setItem(
           `scan_params_${scanId}`,
-          JSON.stringify({ idea: idea.trim(), audience: audience.trim(), timeframe })
+          JSON.stringify({
+            mode,
+            idea: idea.trim(),
+            audience: audience.trim(),
+            startupContext: isFeatureMode ? startupContext.trim() : null,
+            timeframe,
+          })
         );
       }
 
@@ -65,17 +90,77 @@ export default function InputForm() {
       transition={{ duration: 0.6, delay: 0.2 }}
       className="w-full max-w-2xl mx-auto space-y-6"
     >
-      {/* Idea Description */}
+      {/* Mode Toggle */}
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-zinc-300">
+          What are you validating?
+        </label>
+        <div className="flex gap-3">
+          {MODES.map((m) => (
+            <button
+              key={m.value}
+              type="button"
+              onClick={() => setMode(m.value)}
+              className={`flex-1 py-3 px-4 rounded-xl text-sm font-medium transition-all text-left ${
+                mode === m.value
+                  ? 'bg-brand-600 text-white shadow-lg shadow-brand-600/25'
+                  : 'bg-zinc-900/50 text-zinc-400 border border-zinc-800 hover:border-zinc-700'
+              }`}
+            >
+              <span className="block">{m.label}</span>
+              <span className={`block text-xs mt-0.5 ${mode === m.value ? 'text-brand-200' : 'text-zinc-500'}`}>
+                {m.description}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Startup Context (Feature mode only) */}
+      <AnimatePresence>
+        {isFeatureMode && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-2 overflow-hidden"
+          >
+            <label htmlFor="startup-context" className="block text-sm font-medium text-zinc-300">
+              Your Startup
+            </label>
+            <div className="relative">
+              <input
+                id="startup-context"
+                type="text"
+                value={startupContext}
+                onChange={(e) => setStartupContext(e.target.value.slice(0, 200))}
+                placeholder="e.g., Acme — a project management tool for remote engineering teams"
+                className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500/50 transition-all"
+              />
+              <span className="absolute top-1/2 -translate-y-1/2 right-3 text-xs text-zinc-500">
+                {startupContext.length}/200
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Idea / Feature Description */}
       <div className="space-y-2">
         <label htmlFor="idea" className="block text-sm font-medium text-zinc-300">
-          Describe Your Idea
+          {isFeatureMode ? 'Describe the Feature / Tool' : 'Describe Your Idea'}
         </label>
         <div className="relative">
           <textarea
             id="idea"
             value={idea}
             onChange={(e) => setIdea(e.target.value.slice(0, 500))}
-            placeholder="e.g., Virtual residency program for startup founders with mentorship, co-founder matching, and investor access."
+            placeholder={
+              isFeatureMode
+                ? 'e.g., AI-powered daily standup summaries that auto-generate status updates from commit history and PR activity.'
+                : 'e.g., Virtual residency program for startup founders with mentorship, co-founder matching, and investor access.'
+            }
             rows={4}
             className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500/50 resize-none transition-all"
           />
@@ -96,7 +181,11 @@ export default function InputForm() {
             type="text"
             value={audience}
             onChange={(e) => setAudience(e.target.value.slice(0, 200))}
-            placeholder="e.g., First-time startup founders, solo founders, remote tech entrepreneurs"
+            placeholder={
+              isFeatureMode
+                ? 'e.g., Engineering managers, team leads, remote-first companies'
+                : 'e.g., First-time startup founders, solo founders, remote tech entrepreneurs'
+            }
             className="w-full px-4 py-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500/50 transition-all"
           />
           <span className="absolute top-1/2 -translate-y-1/2 right-3 text-xs text-zinc-500">
@@ -160,7 +249,7 @@ export default function InputForm() {
       {/* Submit */}
       <motion.button
         type="submit"
-        disabled={isSubmitting || !idea.trim() || !audience.trim()}
+        disabled={isSubmitting || !idea.trim() || !audience.trim() || (isFeatureMode && !startupContext.trim())}
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         className="w-full py-4 px-6 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-semibold rounded-xl shadow-lg shadow-brand-600/25 hover:shadow-brand-600/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-lg"
@@ -173,6 +262,8 @@ export default function InputForm() {
             </svg>
             Starting Scan...
           </span>
+        ) : isFeatureMode ? (
+          'Validate Feature'
         ) : (
           'Run Validation Scan'
         )}

@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { sourceAdapters } from '@/lib/sources/index';
 import { synthesizeReport } from '@/lib/ai/synthesize';
 import { createEmptyResult } from '@/lib/sources/types';
-import type { SourceResult } from '@/types/report';
+import type { SourceResult, ScanMode } from '@/types/report';
 
 // Allow up to 300 seconds for the streaming scan (Vercel caps to plan limit)
 export const maxDuration = 300;
@@ -12,7 +12,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   const scanId = params.id;
-  let body: { idea: string; audience: string; timeframe: number };
+  let body: { idea: string; audience: string; timeframe: number; mode?: ScanMode; startupContext?: string | null };
 
   try {
     body = await request.json();
@@ -23,7 +23,7 @@ export async function POST(
     });
   }
 
-  const { idea, audience, timeframe } = body;
+  const { idea, audience, timeframe, mode = 'idea', startupContext = null } = body;
 
   if (!idea || !audience) {
     return new Response(JSON.stringify({ error: 'Missing idea or audience' }), {
@@ -31,6 +31,11 @@ export async function POST(
       headers: { 'Content-Type': 'application/json' },
     });
   }
+
+  // Build the search query — for feature mode, combine startup context with the feature description
+  const searchQuery = mode === 'feature' && startupContext
+    ? `${startupContext} ${idea}`
+    : idea;
 
   const encoder = new TextEncoder();
 
@@ -54,7 +59,7 @@ export async function POST(
         const promises = sourceAdapters.map(async (adapter, index) => {
           let result: SourceResult;
           try {
-            result = await adapter.scan(idea, audience, timeframe);
+            result = await adapter.scan(searchQuery, audience, timeframe);
             sourceResults[index] = result;
           } catch {
             result = createEmptyResult(adapter.id);
@@ -78,7 +83,7 @@ export async function POST(
         // AI Synthesis phase
         sendEvent({ type: 'synthesizing' });
 
-        const report = await synthesizeReport(idea, audience, timeframe, sourceResults);
+        const report = await synthesizeReport(idea, audience, timeframe, sourceResults, mode, startupContext);
 
         // Try to persist to DB (works with Supabase, no-op with in-memory on Vercel)
         try {

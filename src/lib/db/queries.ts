@@ -1,4 +1,4 @@
-import type { Scan, UserProfile, ValidationReport } from '@/types/report';
+import type { Scan, ScanMode, UserProfile, ValidationReport } from '@/types/report';
 import { v4 as uuidv4 } from 'uuid';
 
 // ---------------------------------------------------------------------------
@@ -26,7 +26,9 @@ export async function createScan(
   idea: string,
   audience: string,
   timeframe: number,
-  userId?: string
+  userId?: string,
+  mode: ScanMode = 'idea',
+  startupContext: string | null = null
 ): Promise<Scan> {
   if (useSupabase()) {
     const supabase = await getServiceClient();
@@ -36,6 +38,8 @@ export async function createScan(
         idea,
         audience,
         timeframe,
+        mode,
+        startup_context: startupContext,
         user_id: userId || null,
         status: 'pending',
         progress: 0,
@@ -50,8 +54,10 @@ export async function createScan(
   const scan: Scan = {
     id: uuidv4(),
     user_id: userId || null,
+    mode,
     idea,
     audience,
+    startup_context: startupContext,
     timeframe,
     status: 'pending',
     progress: 0,

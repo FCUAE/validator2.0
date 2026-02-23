@@ -157,6 +157,12 @@ export default function DashboardPage() {
                       {scan.idea}
                     </h4>
                     <div className="flex items-center gap-3 mt-1 text-xs text-zinc-500">
+                      {scan.mode === 'feature' && (
+                        <>
+                          <span className="text-brand-400 font-medium">Feature</span>
+                          <span className="text-zinc-700">|</span>
+                        </>
+                      )}
                       <span>{formatDate(scan.created_at)}</span>
                       <span className="text-zinc-700">|</span>
                       <span>{scan.timeframe} day analysis</span>

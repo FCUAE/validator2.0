@@ -1,13 +1,15 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { ValidationReport } from '@/types/report';
+import type { ValidationReport, ScanMode } from '@/types/report';
 import type { SourceResult } from '@/types/report';
-import { SYNTHESIS_SYSTEM_PROMPT, buildUserPrompt } from './prompts';
+import { getSystemPrompt, buildUserPrompt } from './prompts';
 
 export async function synthesizeReport(
   idea: string,
   audience: string,
   timeframeDays: number,
-  sourceResults: SourceResult[]
+  sourceResults: SourceResult[],
+  mode: ScanMode = 'idea',
+  startupContext?: string | null
 ): Promise<ValidationReport> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -16,7 +18,7 @@ export async function synthesizeReport(
 
   const client = new Anthropic({ apiKey });
 
-  const userMessage = buildUserPrompt(idea, audience, timeframeDays, sourceResults);
+  const userMessage = buildUserPrompt(idea, audience, timeframeDays, sourceResults, mode, startupContext);
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
@@ -27,7 +29,7 @@ export async function synthesizeReport(
         content: userMessage,
       },
     ],
-    system: SYNTHESIS_SYSTEM_PROMPT,
+    system: getSystemPrompt(mode),
   });
 
   const textContent = response.content.find((c) => c.type === 'text');
