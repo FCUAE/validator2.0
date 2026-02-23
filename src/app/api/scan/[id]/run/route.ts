@@ -52,11 +52,13 @@ export async function POST(
         let completedCount = 0;
 
         const promises = sourceAdapters.map(async (adapter, index) => {
+          let result: SourceResult;
           try {
-            const result = await adapter.scan(idea, audience, timeframe);
+            result = await adapter.scan(idea, audience, timeframe);
             sourceResults[index] = result;
           } catch {
-            sourceResults[index] = createEmptyResult(adapter.id);
+            result = createEmptyResult(adapter.id);
+            sourceResults[index] = result;
           }
 
           completedCount++;
@@ -64,6 +66,8 @@ export async function POST(
             type: 'source_complete',
             sourceId: adapter.id,
             sourceName: adapter.name,
+            available: result.available,
+            postCount: result.posts.length,
             completedCount,
             totalSources: sourceAdapters.length,
           });
